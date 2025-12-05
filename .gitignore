@@ -1,0 +1,9 @@
+target/
+**/*.png
+run_*/output/
+.DS_Store
+._*
+run_csvs/
+run_data/
+run_greenwood/
+run_pattern10/
