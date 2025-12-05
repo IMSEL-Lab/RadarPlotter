@@ -43,4 +43,4 @@ cargo run --release -- \
 - Default filename: `<Range>_<Gain>_<timestamp>.png` where `timestamp` comes from the CSV filename stem.
 
 ## Example data
-Sample captures live in `run_csvs/csvs/`. Running the quick-start command above yields an image like the provided `run_csvs/output/2_40_20250915_142926_694.png` (colors and transparency depend on the chosen colormap).
+Large sample captures are ignored by git; if you have them locally they live in `run_csvs/csvs/`. Running the quick-start command above yields an image like the provided `run_csvs/output/2_40_20250915_142926_694.png` (colors and transparency depend on the chosen colormap).
