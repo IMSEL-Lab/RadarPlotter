@@ -1,307 +1,386 @@
-use anyhow::{anyhow, Context, Result};
-use clap::Parser;
-use colorous::{Color, MAGMA, TURBO, VIRIDIS};
-use image::{ImageBuffer, Rgba};
-use rayon::prelude::*;
-use std::f64::consts::PI;
-use std::fs;
-use std::path::PathBuf;
+//! CSV to PPI GUI - Main Entry Point
+//! 
+//! A graphical interface for batch converting Furuno CSV radar data to PPI images.
 
-#[derive(Parser, Debug)]
-#[command(name = "ppi_rs", about = "Render Furuno PPI CSV to transparent PNG")]
-struct Args {
-    /// Input CSV files (one or many)
-    #[arg(required = true)]
-    csv: Vec<PathBuf>,
-    /// Output path: for one input, defaults to <range>_<gain>_<ts>.png; for many, provide a directory
-    #[arg(short, long)]
-    output: Option<PathBuf>,
-    /// Pulses per revolution to regularize onto
-    #[arg(short = 'p', long, default_value_t = 720)]
-    pulses: usize,
-    /// Gap threshold in degrees; gaps larger than this stay transparent
-    #[arg(long = "gap-deg", default_value_t = 1.0)]
-    gap_deg: f64,
-    /// Image size (square) in pixels
-    #[arg(long = "size", default_value_t = 1024)]
-    size: u32,
-    /// Colormap: viridis | turbo | magma | gray
-    #[arg(long = "cmap", default_value = "viridis")]
-    cmap: String,
-    /// Parallel jobs (0 = auto ~90% of cores)
-    #[arg(short = 'j', long, default_value_t = 0)]
-    jobs: usize,
-}
+slint::include_modules!();
 
-#[derive(Clone, Copy)]
-enum CMap {
-    Viridis,
-    Turbo,
-    Magma,
-    Gray,
-}
+mod processing;
+mod queue;
+mod config;
 
-impl CMap {
-    fn from_str(s: &str) -> Result<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "viridis" => Ok(Self::Viridis),
-            "turbo" => Ok(Self::Turbo),
-            "magma" => Ok(Self::Magma),
-            "gray" | "grey" | "grayscale" => Ok(Self::Gray),
-            _ => Err(anyhow!("Unknown colormap: {s}")),
-        }
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::thread;
+
+use slint::{ModelRc, SharedString, VecModel};
+
+fn main() -> Result<(), slint::PlatformError> {
+    let ui = AppWindow::new()?;
+    
+    // Shared state
+    let folders: Rc<RefCell<Vec<queue::FolderInfo>>> = Rc::new(RefCell::new(Vec::new()));
+    let processing_handle: Rc<RefCell<Option<thread::JoinHandle<()>>>> = Rc::new(RefCell::new(None));
+    let stop_flag: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    // Keep timer alive by storing it in shared state
+    let progress_timer: Rc<RefCell<Option<slint::Timer>>> = Rc::new(RefCell::new(None));
+    
+    // Load saved settings
+    if let Ok(settings) = config::load_settings() {
+        ui.set_pulses(settings.pulses);
+        ui.set_gap_deg(settings.gap_deg as f32);
+        ui.set_image_size(settings.image_size);
+        ui.set_colormap(settings.colormap.into());
+        ui.set_jobs(settings.jobs);
+        ui.set_output_dir(settings.output_dir.into());
     }
 
-    fn eval(&self, v: f64) -> (u8, u8, u8) {
-        let v = v.clamp(0.0, 1.0);
-        match self {
-            Self::Viridis => to_rgb(VIRIDIS.eval_continuous(v)),
-            Self::Turbo => to_rgb(TURBO.eval_continuous(v)),
-            Self::Magma => to_rgb(MAGMA.eval_continuous(v)),
-            Self::Gray => {
-                let g = (v * 255.0).round() as u8;
-                (g, g, g)
-            }
-        }
-    }
-}
-
-fn to_rgb(c: Color) -> (u8, u8, u8) {
-    (c.r, c.g, c.b)
-}
-
-fn main() -> Result<()> {
-    let args = Args::parse();
-    let cmap = CMap::from_str(&args.cmap)?;
-    let jobs = if args.jobs == 0 {
-        ((num_cpus::get() as f64) * 0.9).ceil().max(1.0) as usize
-    } else {
-        args.jobs
-    };
-
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(jobs)
-        .build()?;
-
-    let out_base = args.output.clone();
-    let pulses = args.pulses;
-    let gap = args.gap_deg.to_radians();
-
-    let results: Vec<_> = pool.install(|| {
-        args.csv
-            .par_iter()
-            .map(|csv_path| -> Result<PathBuf> {
-                let (angles, bins, range_setting, gain, ts_str) = read_csv(csv_path)?;
-                let default_name = format!("{}_{}_{}.png", range_setting, gain, ts_str);
-                let out_path = match &out_base {
-                    Some(p) if args.csv.len() == 1 => p.clone(),
-                    Some(p) => {
-                        let dir = if p.is_dir() { p.clone() } else { p.parent().unwrap_or(p).to_path_buf() };
-                        dir.join(&default_name)
-                    }
-                    None => csv_path.with_file_name(default_name),
+    
+    // Add folder callback
+    {
+        let ui_weak = ui.as_weak();
+        let folders = folders.clone();
+        ui.on_add_folder(move || {
+            let ui = ui_weak.unwrap();
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Select folder containing CSV files")
+                .pick_folder()
+            {
+                let csv_count = queue::count_csv_files(&path);
+                let folder_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
+                
+                let folder_info = queue::FolderInfo {
+                    path: path.clone(),
+                    name: folder_name.clone(),
+                    file_count: csv_count,
+                    status: queue::FolderStatus::Pending,
+                    progress: 0.0,
+                    error_message: None,
                 };
-
-                let (_theta_edges, bins_resampled) =
-                    regularize(&angles, &bins, pulses, gap);
-                let png = render_png(&bins_resampled, range_setting, args.size, cmap)?;
-                png.save(&out_path)
-                    .with_context(|| format!("saving {}", out_path.display()))?;
-                println!("Saved {}", out_path.display());
-                Ok(out_path)
-            })
-            .collect()
-    });
-
-    // surface first error if any
-    for r in results {
-        r?;
-    }
-    Ok(())
-}
-
-/// Read CSV into angle radians and bin matrix.
-fn read_csv(path: &PathBuf) -> Result<(Vec<f64>, Vec<Vec<f32>>, i32, i32, String)> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let mut lines = text.lines();
-    let _header = lines
-        .next()
-        .ok_or_else(|| anyhow!("empty CSV: {}", path.display()))?;
-
-    let mut angles = Vec::new();
-    let mut bins: Vec<Vec<f32>> = Vec::new();
-    let mut range_setting = 0i32;
-    let mut gain_code = 0i32;
-
-    for line in lines {
-        let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() < 6 {
-            return Err(anyhow!(
-                "line has too few columns ({}): {}",
-                parts.len(),
-                line
-            ));
-        }
-        let angle_ticks: f64 = parts[4].parse()?;
-        let row_bins: Vec<f32> = parts[5..]
-            .iter()
-            .map(|s| s.parse::<f32>().unwrap_or(0.0))
-            .collect();
-        angles.push(angle_ticks * (2.0 * PI / 8192.0));
-        bins.push(row_bins);
-        // Range is column 2
-        if range_setting == 0 {
-            range_setting = parts[2].parse().unwrap_or(0);
-        }
-        // Gain is column 3
-        if gain_code == 0 {
-            gain_code = parts[3].parse().unwrap_or(0);
-        }
-    }
-    if angles.is_empty() {
-        return Err(anyhow!("no data rows in {}", path.display()));
-    }
-    // timestamp from filename stem
-    let ts_str = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    Ok((angles, bins, range_setting, gain_code, ts_str))
-}
-
-/// Regularize pulses onto fixed grid, blanking gaps larger than gap_thresh radians.
-fn regularize(
-    angles: &[f64],
-    bins: &[Vec<f32>],
-    pulses: usize,
-    gap_thresh: f64,
-) -> (Vec<f64>, Vec<Vec<f32>>) {
-    let n_bins = bins[0].len();
-    // sort by angle
-    let mut idx: Vec<usize> = (0..angles.len()).collect();
-    idx.sort_by(|&a, &b| angles[a].partial_cmp(&angles[b]).unwrap());
-
-    let mut bins_resampled = vec![vec![f32::NAN; n_bins]; pulses];
-
-    for &i in &idx {
-        let theta = angles[i];
-        let pulse = ((theta / (2.0 * PI)) * pulses as f64).floor() as usize % pulses;
-        bins_resampled[pulse] = bins[i].clone();
-    }
-
-    // gap detection
-    let mut angles_sorted: Vec<f64> = idx.iter().map(|&i| angles[i]).collect();
-    angles_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let mut diffs = Vec::with_capacity(angles_sorted.len());
-    for w in angles_sorted.windows(2) {
-        diffs.push(w[1] - w[0]);
-    }
-    diffs.push((angles_sorted[0] + 2.0 * PI) - angles_sorted.last().unwrap());
-
-    let mut gap_idx: Vec<usize> = Vec::new();
-    for (i, &d) in diffs.iter().enumerate() {
-        if d > gap_thresh {
-            gap_idx.push(i);
-        }
-    }
-
-    if !gap_idx.is_empty() {
-        let centers: Vec<f64> = (0..pulses)
-            .map(|p| p as f64 * 2.0 * PI / pulses as f64)
-            .collect();
-        for &g in &gap_idx {
-            let start = angles_sorted[g];
-            let mut end = angles_sorted[(g + 1) % angles_sorted.len()];
-            if end < start {
-                end += 2.0 * PI;
+                
+                folders.borrow_mut().push(folder_info);
+                update_folder_model(&ui, &folders.borrow());
             }
-            for (pi, &c) in centers.iter().enumerate() {
-                let mut cc = c;
-                if cc < start {
-                    cc += 2.0 * PI;
+        });
+    }
+    
+    // Remove folder callback
+    {
+        let ui_weak = ui.as_weak();
+        let folders = folders.clone();
+        ui.on_remove_folder(move |index| {
+            let ui = ui_weak.unwrap();
+            let mut folders_mut = folders.borrow_mut();
+            if (index as usize) < folders_mut.len() {
+                folders_mut.remove(index as usize);
+                drop(folders_mut);
+                update_folder_model(&ui, &folders.borrow());
+            }
+        });
+    }
+    
+    // Move folder up callback
+    {
+        let ui_weak = ui.as_weak();
+        let folders = folders.clone();
+        ui.on_move_folder_up(move |index| {
+            let ui = ui_weak.unwrap();
+            let mut folders_mut = folders.borrow_mut();
+            if index > 0 && (index as usize) < folders_mut.len() {
+                folders_mut.swap(index as usize, (index - 1) as usize);
+                drop(folders_mut);
+                update_folder_model(&ui, &folders.borrow());
+            }
+        });
+    }
+    
+    // Move folder down callback
+    {
+        let ui_weak = ui.as_weak();
+        let folders = folders.clone();
+        ui.on_move_folder_down(move |index| {
+            let ui = ui_weak.unwrap();
+            let mut folders_mut = folders.borrow_mut();
+            if ((index + 1) as usize) < folders_mut.len() {
+                folders_mut.swap(index as usize, (index + 1) as usize);
+                drop(folders_mut);
+                update_folder_model(&ui, &folders.borrow());
+            }
+        });
+    }
+    
+    // Clear queue callback
+    {
+        let ui_weak = ui.as_weak();
+        let folders = folders.clone();
+        ui.on_clear_queue(move || {
+            let ui = ui_weak.unwrap();
+            folders.borrow_mut().clear();
+            update_folder_model(&ui, &folders.borrow());
+        });
+    }
+    
+    // Settings changed callback
+    {
+        ui.on_settings_changed(move |pulses, gap_deg, image_size, colormap, jobs, output_dir| {
+            let settings = config::Settings {
+                pulses,
+                gap_deg: gap_deg as f64,
+                image_size,
+                colormap: colormap.to_string(),
+                jobs,
+                output_dir: output_dir.to_string(),
+            };
+            let _ = config::save_settings(&settings);
+        });
+    }
+
+    
+    // Start processing callback
+    {
+        let ui_weak = ui.as_weak();
+        let folders = folders.clone();
+        let processing_handle = processing_handle.clone();
+        let stop_flag = stop_flag.clone();
+        let progress_timer = progress_timer.clone();
+        
+        ui.on_start_processing(move || {
+            let ui = ui_weak.unwrap();
+            
+            // Don't start if already processing
+            if ui.get_is_processing() {
+                return;
+            }
+            
+            // Reset stop flag
+            stop_flag.store(false, Ordering::Relaxed);
+            
+            // Get settings
+            let output_dir_str = ui.get_output_dir().to_string();
+            let settings = processing::ProcessingSettings {
+                pulses: ui.get_pulses() as usize,
+                gap_deg: ui.get_gap_deg() as f64,
+                size: ui.get_image_size() as u32,
+                colormap: ui.get_colormap().to_string(),
+                jobs: ui.get_jobs() as usize,
+                output_dir: if output_dir_str.is_empty() { 
+                    None 
+                } else { 
+                    Some(std::path::PathBuf::from(output_dir_str)) 
+                },
+            };
+
+            
+            // Get folder list
+            let folder_list: Vec<queue::FolderInfo> = folders.borrow().clone();
+            if folder_list.is_empty() {
+                return;
+            }
+            
+            // Create progress channel
+            let (tx, rx) = mpsc::channel::<processing::ProgressUpdate>();
+            
+            // Update UI state
+            ui.set_is_processing(true);
+            ui.set_is_complete(false);
+            ui.set_status_text("Starting...".into());
+            ui.set_folders_completed(0);
+            ui.set_files_completed(0);
+            ui.set_files_total(0);
+            ui.set_overall_progress(0.0);
+            
+            // Reset progress for all folders
+            {
+                let mut folders_mut = folders.borrow_mut();
+                for folder in folders_mut.iter_mut() {
+                    folder.status = queue::FolderStatus::Pending;
+                    folder.progress = 0.0;
                 }
-                if cc >= start && cc < end {
-                    bins_resampled[pi] = vec![f32::NAN; n_bins];
-                }
             }
-        }
+            update_folder_model(&ui, &folders.borrow());
+            
+            // Spawn processing thread
+            let stop_flag_clone = stop_flag.clone();
+            let handle = thread::spawn(move || {
+                processing::process_folders(folder_list, settings, tx, stop_flag_clone);
+            });
+            
+            *processing_handle.borrow_mut() = Some(handle);
+            
+            // Set up progress polling
+            let ui_weak_poll = ui.as_weak();
+            let folders_poll = folders.clone();
+            let processing_handle_poll = processing_handle.clone();
+            
+            let timer = slint::Timer::default();
+            timer.start(
+                slint::TimerMode::Repeated,
+                std::time::Duration::from_millis(50),
+                move || {
+                    let ui = match ui_weak_poll.upgrade() {
+                        Some(ui) => ui,
+                        None => return,
+                    };
+                    
+                    // Process all pending updates
+                    while let Ok(update) = rx.try_recv() {
+                        match update {
+                            processing::ProgressUpdate::FolderStarted { folder_index, folder_name } => {
+                                ui.set_current_folder(folder_name.into());
+                                ui.set_status_text(SharedString::from(format!("Processing folder {}", folder_index + 1)));
+                                
+                                let mut folders_mut = folders_poll.borrow_mut();
+                                if folder_index < folders_mut.len() {
+                                    folders_mut[folder_index].status = queue::FolderStatus::Processing;
+                                }
+                                drop(folders_mut);
+                                update_folder_model(&ui, &folders_poll.borrow());
+                            }
+                            processing::ProgressUpdate::FileProgress { 
+                                folder_index, 
+                                files_done, 
+                                files_total, 
+                                current_file,
+                                files_per_second,
+                            } => {
+                                let folder_progress = files_done as f32 / files_total.max(1) as f32;
+                                ui.set_folder_progress(folder_progress);
+                                ui.set_files_completed(files_done as i32);
+                                ui.set_files_total(files_total as i32);
+                                ui.set_current_file(current_file.into());
+                                ui.set_files_per_second(files_per_second as f32);
+                                
+                                // Update folder progress
+                                let mut folders_mut = folders_poll.borrow_mut();
+                                if folder_index < folders_mut.len() {
+                                    folders_mut[folder_index].progress = folder_progress;
+                                }
+                                drop(folders_mut);
+                                update_folder_model(&ui, &folders_poll.borrow());
+                                
+                                // Calculate ETA
+                                if files_per_second > 0.0 {
+                                    let remaining = files_total - files_done;
+                                    let eta_secs = (remaining as f64 / files_per_second) as u64;
+                                    let eta_mins = eta_secs / 60;
+                                    let eta_secs_rem = eta_secs % 60;
+                                    ui.set_eta_text(SharedString::from(format!("{:02}:{:02}", eta_mins, eta_secs_rem)));
+                                }
+                            }
+                            processing::ProgressUpdate::FolderCompleted { folder_index } => {
+                                let mut folders_mut = folders_poll.borrow_mut();
+                                if folder_index < folders_mut.len() {
+                                    folders_mut[folder_index].status = queue::FolderStatus::Complete;
+                                    folders_mut[folder_index].progress = 1.0;
+                                }
+                                ui.set_folders_completed(ui.get_folders_completed() + 1);
+                                
+                                // Update overall progress
+                                let total_folders = folders_mut.len() as f32;
+                                let completed = folders_mut.iter()
+                                    .filter(|f| matches!(f.status, queue::FolderStatus::Complete))
+                                    .count() as f32;
+                                ui.set_overall_progress(completed / total_folders);
+                                
+                                drop(folders_mut);
+                                update_folder_model(&ui, &folders_poll.borrow());
+                            }
+                            processing::ProgressUpdate::FolderError { folder_index, error } => {
+                                let mut folders_mut = folders_poll.borrow_mut();
+                                if folder_index < folders_mut.len() {
+                                    folders_mut[folder_index].status = queue::FolderStatus::Error;
+                                    folders_mut[folder_index].error_message = Some(error);
+                                }
+                                drop(folders_mut);
+                                update_folder_model(&ui, &folders_poll.borrow());
+                            }
+                            processing::ProgressUpdate::AllComplete => {
+                                ui.set_is_processing(false);
+                                ui.set_is_complete(true);
+                                ui.set_overall_progress(1.0);
+                                ui.set_status_text("Processing complete!".into());
+                                ui.set_eta_text("--:--".into());
+                                
+                                // Clean up handle
+                                if let Some(handle) = processing_handle_poll.borrow_mut().take() {
+                                    let _ = handle.join();
+                                }
+                            }
+                            processing::ProgressUpdate::Cancelled => {
+                                ui.set_is_processing(false);
+                                ui.set_status_text("Cancelled".into());
+                                
+                                // Clean up handle
+                                if let Some(handle) = processing_handle_poll.borrow_mut().take() {
+                                    let _ = handle.join();
+                                }
+                            }
+                        }
+                    }
+                },
+            );
+            
+            // Store timer to keep it alive
+            *progress_timer.borrow_mut() = Some(timer);
+        });
     }
+    
+    // Stop processing callback
+    {
+        let stop_flag = stop_flag.clone();
+        ui.on_stop_processing(move || {
+            stop_flag.store(true, Ordering::Relaxed);
+        });
+    }
+    
+    // Browse output directory callback
+    {
+        let ui_weak = ui.as_weak();
+        ui.on_browse_output_dir(move || {
+            let ui = ui_weak.unwrap();
+            if let Some(path) = rfd::FileDialog::new()
+                .set_title("Select output directory")
+                .pick_folder()
+            {
+                ui.set_output_dir(path.to_string_lossy().to_string().into());
+            }
+        });
+    }
+    
+    // Show help callback (placeholder - could open a dialog or window)
+    {
+        ui.on_show_help(move || {
+            // For now, this is a no-op. Could show a help dialog in the future.
+            println!("Help requested - settings explanations are shown inline.");
+        });
+    }
+    
+    ui.run()
 
-    let theta_edges: Vec<f64> = (0..=pulses)
-        .map(|p| p as f64 * 2.0 * PI / pulses as f64)
-        .collect();
-    (theta_edges, bins_resampled)
 }
 
-/// Render to RGBA PNG with transparent background and zero-values transparent.
-fn render_png(
-    bins: &[Vec<f32>],
-    range_setting: i32,
-    size: u32,
-    cmap: CMap,
-) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>> {
-    let pulses = bins.len();
-    let n_bins = bins[0].len();
-
-    // find max value (non-zero, finite)
-    let mut max_val = 0.0f32;
-    for row in bins {
-        for &v in row {
-            if v.is_finite() && v > max_val {
-                max_val = v;
-            }
+/// Update the folder model in the UI from the internal state
+fn update_folder_model(ui: &AppWindow, folders: &[queue::FolderInfo]) {
+    let items: Vec<FolderItem> = folders.iter().map(|f| {
+        FolderItem {
+            path: f.path.to_string_lossy().to_string().into(),
+            name: f.name.clone().into(),
+            file_count: f.file_count as i32,
+            status: match f.status {
+                queue::FolderStatus::Pending => "pending".into(),
+                queue::FolderStatus::Processing => "processing".into(),
+                queue::FolderStatus::Complete => "complete".into(),
+                queue::FolderStatus::Error => "error".into(),
+            },
+            progress: f.progress,
+            error_message: f.error_message.clone().unwrap_or_default().into(),
         }
-    }
-    let mut img = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(size, size);
-    // If no signal, return fully transparent image
-    if max_val <= 0.0 {
-        for (_, _, pixel) in img.enumerate_pixels_mut() {
-            *pixel = Rgba([0, 0, 0, 0]);
-        }
-        return Ok(img);
-    }
-
-    let cx = size as f64 / 2.0;
-    let cy = size as f64 / 2.0;
-    let radius = cx.min(cy);
-    let range_max = if range_setting > 0 {
-        range_setting as f64
-    } else {
-        n_bins as f64
-    };
-
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        let dx = x as f64 + 0.5 - cx;
-        let dy = cy - (y as f64 + 0.5); // y up
-        let r_norm = (dx * dx + dy * dy).sqrt() / radius;
-        if r_norm > 1.0 {
-            *pixel = Rgba([0, 0, 0, 0]);
-            continue;
-        }
-        let mut theta = dx.atan2(dy); // 0 at north, clockwise
-        if theta < 0.0 {
-            theta += 2.0 * PI;
-        }
-
-        let pulse_idx = ((theta / (2.0 * PI)) * pulses as f64).floor() as usize % pulses;
-        let r_val = r_norm * range_max;
-        let bin_idx = (r_val / range_max * n_bins as f64).floor() as usize;
-        if bin_idx >= n_bins {
-            *pixel = Rgba([0, 0, 0, 0]);
-            continue;
-        }
-
-        let v = bins[pulse_idx][bin_idx];
-        if !v.is_finite() || v == 0.0 {
-            *pixel = Rgba([0, 0, 0, 0]);
-            continue;
-        }
-        let norm = (v / max_val).clamp(0.0, 1.0) as f64;
-        let (r, g, b) = cmap.eval(norm);
-        *pixel = Rgba([r, g, b, 255]);
-    }
-    Ok(img)
+    }).collect();
+    
+    let model = Rc::new(VecModel::from(items));
+    ui.set_folders(ModelRc::from(model));
 }

@@ -1,0 +1,559 @@
+// ============================================================================
+// SETTINGS PANEL COMPONENT
+// ============================================================================
+// Settings for CSV to PPI processing with collapsible sections
+
+import { MaterialPalette } from "../material/ui/styling/material_palette.slint";
+import {
+    MaterialTypography,
+} from "../material/ui/styling/material_typography.slint";
+import { MaterialText } from "../material/ui/components/material_text.slint";
+import { Icon } from "../material/ui/components/icon.slint";
+import { Icons } from "../material/ui/icons/icons.slint";
+import { AppTheme } from "../app_theme.slint";
+
+// ============================================================================
+// SECTION HEADER (collapsible)
+// ============================================================================
+component SectionHeader inherits Rectangle {
+    in property <string> title;
+    in-out property <bool> expanded: true;
+    callback toggle();
+
+    height: 32px;
+    background: touch.has-hover ? MaterialPalette.surface-container : transparent;
+
+    touch := TouchArea {
+        clicked => {
+            root.expanded = !root.expanded;
+            root.toggle();
+        }
+        mouse-cursor: pointer;
+    }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+
+        Icon {
+            source: root.expanded ? Icons.arrow_drop_down : Icons.arrow_right;
+            colorize: MaterialPalette.on-surface-variant;
+            width: 18px;
+            y: (parent.height - self.height) / 2;
+        }
+
+        MaterialText {
+            text: root.title;
+            style: MaterialTypography.title-small;
+            color: MaterialPalette.on-surface;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+// ============================================================================
+// SETTING ROW COMPONENT (compact)
+// ============================================================================
+component SettingRow inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <string> unit: "";
+    in property <string> help: "";
+    callback increment();
+    callback decrement();
+
+    height: 44px;
+
+    VerticalLayout {
+        alignment: center;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 8px;
+
+            MaterialText {
+                text: root.label;
+                horizontal-stretch: 1;
+                style: MaterialTypography.body-small;
+                color: MaterialPalette.on-surface;
+                vertical-alignment: center;
+            }
+
+            // Decrement
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 4px;
+                background: dec-touch.has-hover ? MaterialPalette.surface-container-highest : MaterialPalette.surface-container;
+
+                MaterialText {
+                    text: "−";
+                    style: MaterialTypography.body-medium;
+                    color: MaterialPalette.on-surface;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                dec-touch := TouchArea {
+                    clicked => {
+                        root.decrement();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+
+            // Value display
+            Rectangle {
+                width: 60px;
+                height: 28px;
+                border-radius: 4px;
+                background: MaterialPalette.surface-container-low;
+
+                MaterialText {
+                    text: root.value + root.unit;
+                    style: MaterialTypography.body-small;
+                    color: MaterialPalette.on-surface;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Increment
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 4px;
+                background: inc-touch.has-hover ? MaterialPalette.surface-container-highest : MaterialPalette.surface-container;
+
+                MaterialText {
+                    text: "+";
+                    style: MaterialTypography.body-medium;
+                    color: MaterialPalette.on-surface;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                inc-touch := TouchArea {
+                    clicked => {
+                        root.increment();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+        }
+    }
+}
+
+
+// ============================================================================
+// NUMBER INPUT ROW - For direct number entry
+// ============================================================================
+component NumberInputRow inherits Rectangle {
+    in property <string> label;
+    in-out property <int> value;
+    in property <string> unit: "";
+    in property <int> min-value: 0;
+    in property <int> max-value: 9999;
+    callback value-changed();
+
+    height: 44px;
+
+    VerticalLayout {
+        alignment: center;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 8px;
+
+            MaterialText {
+                text: root.label;
+                horizontal-stretch: 1;
+                style: MaterialTypography.body-small;
+                color: MaterialPalette.on-surface;
+                vertical-alignment: center;
+            }
+
+            // Text input field
+            Rectangle {
+                width: 80px;
+                height: 28px;
+                border-radius: 4px;
+                background: MaterialPalette.surface-container-lowest;
+                border-width: 1px;
+                border-color: input.has-focus ? MaterialPalette.primary : MaterialPalette.outline-variant;
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+
+                    input := TextInput {
+                        text: root.value;
+                        font-size: MaterialTypography.body-small.font-size;
+                        color: MaterialPalette.on-surface;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        input-type: number;
+
+                        edited => {
+                            root.value = Math.max(root.min-value, Math.min(root.max-value, self.text.to-float()));
+                            root.value-changed();
+                        }
+                    }
+                }
+            }
+
+            // Unit label
+            if root.unit != "": MaterialText {
+                text: root.unit;
+                style: MaterialTypography.body-small;
+                color: MaterialPalette.outline;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+
+
+// ============================================================================
+// COLORMAP PREVIEW - Shows actual gradient colors
+// ============================================================================
+component ColormapPreview inherits Rectangle {
+    in property <string> colormap-name;
+
+    height: 8px;
+    border-radius: 4px;
+    clip: true;
+
+    if root.colormap-name == "viridis": Rectangle {
+        background: @linear-gradient(90deg, #440154, #414487, #2a788e, #22a884, #7ad151, #fde725);
+    }
+    if root.colormap-name == "turbo": Rectangle {
+        background: @linear-gradient(90deg, #30123b, #4662d7, #35aac4, #1ae491, #b5de2b, #faba39, #f66b19, #d93806, #7a0402);
+    }
+    if root.colormap-name == "magma": Rectangle {
+        background: @linear-gradient(90deg, #000004, #1c1044, #4f127b, #812581, #b5367a, #e55063, #fb8761, #fec488, #fcfdbf);
+    }
+    if root.colormap-name == "inferno": Rectangle {
+        background: @linear-gradient(90deg, #000004, #160b39, #420a68, #6a176e, #932667, #bc3754, #dd513a, #f37819, #fca50a, #f0f921);
+    }
+    if root.colormap-name == "plasma": Rectangle {
+        background: @linear-gradient(90deg, #0d0887, #46039f, #7201a8, #9c179e, #bd3786, #d8576b, #ed7953, #fb9f3a, #fdca26, #f0f921);
+    }
+    if root.colormap-name == "gray": Rectangle {
+        background: @linear-gradient(90deg, #000000, #808080, #ffffff);
+    }
+}
+
+// ============================================================================
+// COLORMAP ITEM (selectable row with checkmark)
+// ============================================================================
+component ColormapItem inherits Rectangle {
+    in property <string> name;
+    in property <bool> selected: false;
+    callback clicked();
+
+    height: 36px;
+    background: touch.has-hover ? MaterialPalette.surface-container-high : transparent;
+    border-radius: 4px;
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+        mouse-cursor: pointer;
+    }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+
+        // Checkmark
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            y: (parent.height - self.height) / 2;
+
+            if root.selected: Icon {
+                source: Icons.check;
+                colorize: MaterialPalette.primary;
+                width: 16px;
+                height: 16px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        // Name and preview
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 2px;
+
+            MaterialText {
+                text: root.name;
+                style: MaterialTypography.body-small;
+                color: root.selected ? MaterialPalette.primary : MaterialPalette.on-surface;
+            }
+
+            ColormapPreview {
+                colormap-name: root.name;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// OUTPUT DIRECTORY SELECTOR (compact)
+// ============================================================================
+component OutputDirRow inherits Rectangle {
+    in-out property <string> output-dir;
+    callback browse-clicked();
+
+    height: 44px;
+
+    VerticalLayout {
+        alignment: center;
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 8px;
+
+            MaterialText {
+                text: "Output";
+                style: MaterialTypography.body-small;
+                color: MaterialPalette.on-surface;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 28px;
+                border-radius: 4px;
+                background: MaterialPalette.surface-container-lowest;
+                border-width: 1px;
+                border-color: MaterialPalette.outline-variant;
+                clip: true;
+
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+
+                    MaterialText {
+                        text: root.output-dir == "" ? "(input folder)" : root.output-dir;
+                        style: MaterialTypography.label-small;
+                        color: root.output-dir == "" ? MaterialPalette.outline : MaterialPalette.on-surface;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 4px;
+                background: browse-touch.has-hover ? MaterialPalette.primary-container : MaterialPalette.surface-container;
+
+                Icon {
+                    source: Icons.folder_open;
+                    colorize: MaterialPalette.on-surface-variant;
+                    width: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                browse-touch := TouchArea {
+                    clicked => {
+                        root.browse-clicked();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+        }
+    }
+}
+
+
+// ============================================================================
+// SETTINGS PANEL
+// ============================================================================
+export component SettingsPanel {
+    // Settings values
+    in-out property <int> pulses: 720;
+    in-out property <float> gap-deg: 1.0;
+    in-out property <int> image-size: 1735;
+    in-out property <string> colormap: "viridis";
+    in-out property <int> jobs: 0;
+    in-out property <string> output-dir: "";
+
+    // Section visibility
+    property <bool> render-expanded: true;
+    property <bool> colormap-expanded: true;
+    property <bool> output-expanded: true;
+
+    callback settings-changed();
+    callback browse-output-dir();
+
+    Flickable {
+        viewport-height: content.preferred-height;
+
+        content := VerticalLayout {
+            spacing: 4px;
+            padding-bottom: 8px;
+
+            // ================================================================
+            // OUTPUT SECTION
+            // ================================================================
+            SectionHeader {
+                title: "Output";
+                expanded <=> root.output-expanded;
+            }
+
+            if root.output-expanded: OutputDirRow {
+                output-dir <=> root.output-dir;
+                browse-clicked => {
+                    root.browse-output-dir();
+                }
+            }
+
+            // ================================================================
+            // COLORMAP SECTION
+            // ================================================================
+            SectionHeader {
+                title: "Colormap";
+                expanded <=> root.colormap-expanded;
+            }
+
+            if root.colormap-expanded: VerticalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 2px;
+
+                ColormapItem {
+                    name: "viridis";
+                    selected: root.colormap == "viridis";
+                    clicked => {
+                        root.colormap = "viridis";
+                        root.settings-changed();
+                    }
+                }
+
+                ColormapItem {
+                    name: "turbo";
+                    selected: root.colormap == "turbo";
+                    clicked => {
+                        root.colormap = "turbo";
+                        root.settings-changed();
+                    }
+                }
+
+                ColormapItem {
+                    name: "magma";
+                    selected: root.colormap == "magma";
+                    clicked => {
+                        root.colormap = "magma";
+                        root.settings-changed();
+                    }
+                }
+
+                ColormapItem {
+                    name: "inferno";
+                    selected: root.colormap == "inferno";
+                    clicked => {
+                        root.colormap = "inferno";
+                        root.settings-changed();
+                    }
+                }
+
+                ColormapItem {
+                    name: "plasma";
+                    selected: root.colormap == "plasma";
+                    clicked => {
+                        root.colormap = "plasma";
+                        root.settings-changed();
+                    }
+                }
+
+                ColormapItem {
+                    name: "gray";
+                    selected: root.colormap == "gray";
+                    clicked => {
+                        root.colormap = "gray";
+                        root.settings-changed();
+                    }
+                }
+            }
+
+            // ================================================================
+            // RENDER SETTINGS SECTION
+            // ================================================================
+            SectionHeader {
+                title: "Render Settings";
+                expanded <=> root.render-expanded;
+            }
+
+            if root.render-expanded: VerticalLayout {
+                spacing: 2px;
+
+                SettingRow {
+                    label: "Ang. Resolution";
+                    value: root.pulses;
+                    increment => {
+                        root.pulses = Math.min(root.pulses + 60, 1440);
+                        root.settings-changed();
+                    }
+                    decrement => {
+                        root.pulses = Math.max(root.pulses - 60, 60);
+                        root.settings-changed();
+                    }
+                }
+
+                SettingRow {
+                    label: "Interp. Fill";
+                    value: root.gap-deg;
+                    unit: "°";
+                    increment => {
+                        root.gap-deg = Math.min(root.gap-deg + 0.5, 10.0);
+                        root.settings-changed();
+                    }
+                    decrement => {
+                        root.gap-deg = Math.max(root.gap-deg - 0.5, 0.5);
+                        root.settings-changed();
+                    }
+                }
+
+                NumberInputRow {
+                    label: "Output Dim.";
+                    value <=> root.image-size;
+                    unit: "px";
+                    min-value: 128;
+                    max-value: 8192;
+                    value-changed => {
+                        root.settings-changed();
+                    }
+                }
+
+                SettingRow {
+                    label: "Num. Workers";
+                    value: root.jobs == 0 ? "auto" : root.jobs;
+                    increment => {
+                        root.jobs = Math.min(root.jobs + 1, 32);
+                        root.settings-changed();
+                    }
+                    decrement => {
+                        root.jobs = Math.max(root.jobs - 1, 0);
+                        root.settings-changed();
+                    }
+                }
+            }
+        }
+    }
+}

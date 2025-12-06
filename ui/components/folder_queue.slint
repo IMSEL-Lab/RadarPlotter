@@ -1,0 +1,372 @@
+// ============================================================================
+// FOLDER QUEUE COMPONENT
+// ============================================================================
+// Displays the list of folders to process with status indicators and controls
+
+import { MaterialPalette } from "../material/ui/styling/material_palette.slint";
+import {
+    MaterialTypography,
+} from "../material/ui/styling/material_typography.slint";
+import {
+    MaterialStyleMetrics,
+} from "../material/ui/styling/material_style_metrics.slint";
+import { MaterialText } from "../material/ui/components/material_text.slint";
+import { Icon } from "../material/ui/components/icon.slint";
+import { Icons } from "../material/ui/icons/icons.slint";
+import { AppTheme } from "../app_theme.slint";
+
+// ============================================================================
+// FOLDER ITEM DATA STRUCTURE
+// ============================================================================
+export struct FolderItem {
+    path: string,
+    name: string,
+    file_count: int,
+    status: string,  // "pending", "processing", "complete", "error"
+    progress: float, // 0.0 - 1.0
+    error_message: string,
+}
+
+// ============================================================================
+// SINGLE FOLDER ROW
+// ============================================================================
+component FolderRow inherits Rectangle {
+    in property <FolderItem> folder;
+    in property <int> index;
+    in property <bool> selected: false;
+    callback remove-clicked();
+    callback move-up-clicked();
+    callback move-down-clicked();
+    callback row-clicked();
+
+    height: 64px;
+    background: root.selected ? MaterialPalette.primary-container.with-alpha(0.3) : (touch.has-hover ? MaterialPalette.surface-container-high : transparent);
+    border-radius: 8px;
+
+    touch := TouchArea {
+        clicked => {
+            root.row-clicked();
+        }
+        mouse-cursor: pointer;
+    }
+
+    HorizontalLayout {
+        padding: 12px;
+        spacing: 12px;
+
+        // Status icon
+        Rectangle {
+            width: 32px;
+            height: 32px;
+            border-radius: 16px;
+            background: root.folder.status == "complete" ? AppTheme.success : root.folder.status == "error" ? AppTheme.error : root.folder.status == "processing" ? AppTheme.primary-main : AppTheme.surface-container-high;
+
+            Icon {
+                source: root.folder.status == "complete" ? Icons.check : root.folder.status == "error" ? Icons.close : root.folder.status == "processing" ? Icons.sync : Icons.folder;
+                colorize: white;
+                width: 18px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+
+        // Folder info
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 4px;
+            alignment: center;
+
+            MaterialText {
+                text: root.folder.name;
+                style: MaterialTypography.body-medium;
+                color: MaterialPalette.on-surface;
+                overflow: elide;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+
+                MaterialText {
+                    text: root.folder.file_count + " files";
+                    style: MaterialTypography.label-small;
+                    color: MaterialPalette.on-surface-variant;
+                }
+
+                if root.folder.status == "processing": MaterialText {
+                    text: Math.round(root.folder.progress * 100) + "%";
+                    style: MaterialTypography.label-small;
+                    color: AppTheme.primary-main;
+                }
+            }
+
+            // Progress bar when processing
+            if root.folder.status == "processing": Rectangle {
+                height: 4px;
+                border-radius: 2px;
+                background: AppTheme.progress-background;
+
+                Rectangle {
+                    x: 0;
+                    width: parent.width * root.folder.progress;
+                    height: 100%;
+                    border-radius: 2px;
+                    background: AppTheme.progress-fill;
+                }
+            }
+        }
+
+        // Action buttons
+        HorizontalLayout {
+            spacing: 4px;
+            alignment: center;
+
+            // Move up
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: up-touch.has-hover ? MaterialPalette.surface-container-highest : transparent;
+
+                Icon {
+                    source: Icons.arrow_drop_up;
+                    colorize: MaterialPalette.on-surface-variant;
+                    width: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                up-touch := TouchArea {
+                    clicked => {
+                        root.move-up-clicked();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+
+            // Move down
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: down-touch.has-hover ? MaterialPalette.surface-container-highest : transparent;
+
+                Icon {
+                    source: Icons.arrow_drop_down;
+                    colorize: MaterialPalette.on-surface-variant;
+                    width: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                down-touch := TouchArea {
+                    clicked => {
+                        root.move-down-clicked();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+
+            // Remove
+            Rectangle {
+                width: 28px;
+                height: 28px;
+                border-radius: 14px;
+                background: remove-touch.has-hover ? MaterialPalette.error-container : transparent;
+
+                Icon {
+                    source: Icons.close;
+                    colorize: remove-touch.has-hover ? MaterialPalette.on-error-container : MaterialPalette.on-surface-variant;
+                    width: 16px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                remove-touch := TouchArea {
+                    clicked => {
+                        root.remove-clicked();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// FOLDER QUEUE PANEL
+// ============================================================================
+export component FolderQueue {
+    in property <[FolderItem]> folders;
+    in property <int> selected-index: -1;
+    in property <bool> is-processing: false;
+    in property <bool> has-folders: false;
+    callback add-folder();
+    callback remove-folder(int);
+    callback move-up(int);
+    callback move-down(int);
+    callback select-folder(int);
+    callback start-processing();
+    callback stop-processing();
+
+    min-height: 280px;
+
+    VerticalLayout {
+        spacing: 8px;
+
+        // Header with title
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+
+            MaterialText {
+                text: "Folder Queue (" + root.folders.length + ")";
+                style: MaterialTypography.title-medium;
+                color: MaterialPalette.on-surface;
+            }
+        }
+
+        // Add Folder button (full width like Start button)
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-bottom: 8px;
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 44px;
+                border-radius: 8px;
+                background: add-touch.has-hover ? MaterialPalette.secondary : MaterialPalette.secondary-container;
+
+                add-touch := TouchArea {
+                    clicked => {
+                        root.add-folder();
+                    }
+                    mouse-cursor: pointer;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+
+                    Icon {
+                        source: Icons.folder_open;
+                        width: 18px;
+                        height: 18px;
+                        colorize: add-touch.has-hover ? MaterialPalette.on-secondary : MaterialPalette.on-secondary-container;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    MaterialText {
+                        text: "Add Folder";
+                        style: MaterialTypography.label-large;
+                        color: add-touch.has-hover ? MaterialPalette.on-secondary : MaterialPalette.on-secondary-container;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: MaterialPalette.outline-variant;
+        }
+
+        // Folder list area (always takes vertical stretch)
+        Rectangle {
+            vertical-stretch: 1;
+            
+            // Empty state
+            if root.folders.length == 0: VerticalLayout {
+                alignment: center;
+
+                MaterialText {
+                    text: "No folders in queue";
+                    style: MaterialTypography.body-medium;
+                    color: MaterialPalette.outline;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // Folder list
+            if root.folders.length > 0: Flickable {
+                viewport-height: folder-list.preferred-height;
+
+                folder-list := VerticalLayout {
+                    padding: 8px;
+                    spacing: 4px;
+
+                    for folder[idx] in root.folders: FolderRow {
+                        folder: folder;
+                        index: idx;
+                        selected: idx == root.selected-index;
+                        remove-clicked => {
+                            root.remove-folder(idx);
+                        }
+                        move-up-clicked => {
+                            root.move-up(idx);
+                        }
+                        move-down-clicked => {
+                            root.move-down(idx);
+                        }
+                        row-clicked => {
+                            root.select-folder(idx);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Divider before Start button
+        Rectangle {
+            height: 1px;
+            background: MaterialPalette.outline-variant;
+        }
+
+        // Start/Stop button at bottom
+        HorizontalLayout {
+            padding: 12px;
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 44px;
+                border-radius: 8px;
+                background: !root.has-folders ? MaterialPalette.surface-container : root.is-processing ? MaterialPalette.error-container : MaterialPalette.primary;
+
+                start-touch := TouchArea {
+                    enabled: root.has-folders;
+                    clicked => {
+                        if (root.is-processing) {
+                            root.stop-processing();
+                        } else {
+                            root.start-processing();
+                        }
+                    }
+                    mouse-cursor: root.has-folders ? pointer : default;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+
+                    Icon {
+                        source: root.is-processing ? Icons.stop : Icons.play;
+                        width: 18px;
+                        height: 18px;
+                        colorize: !root.has-folders ? MaterialPalette.outline : root.is-processing ? MaterialPalette.on-error-container : MaterialPalette.on-primary;
+                        y: (parent.height - self.height) / 2;
+                    }
+
+                    MaterialText {
+                        text: root.is-processing ? "Stop Processing" : "Start Processing";
+                        style: MaterialTypography.label-large;
+                        color: !root.has-folders ? MaterialPalette.outline : root.is-processing ? MaterialPalette.on-error-container : MaterialPalette.on-primary;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

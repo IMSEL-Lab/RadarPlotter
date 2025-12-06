@@ -1,0 +1,349 @@
+// ============================================================================
+// CSV TO PPI GUI - MAIN WINDOW
+// ============================================================================
+// Main application window for batch CSV to PPI conversion
+
+import { MaterialPalette } from "material/ui/styling/material_palette.slint";
+import {
+    MaterialTypography,
+} from "material/ui/styling/material_typography.slint";
+import { MaterialText } from "material/ui/components/material_text.slint";
+
+import { AppTheme } from "app_theme.slint";
+import { TopBar } from "components/top_bar.slint";
+import { FolderQueue, FolderItem } from "components/folder_queue.slint";
+import { SettingsPanel } from "components/settings_panel.slint";
+import { ProgressPanel } from "components/progress_panel.slint";
+import { BottomBar } from "components/bottom_bar.slint";
+
+// ============================================================================
+// MAIN APPLICATION WINDOW
+// ============================================================================
+export component AppWindow inherits Window {
+    title: "CSV to PPI Converter";
+    min-width: 900px;
+    min-height: 600px;
+    background: MaterialPalette.background;
+
+    // ========================================================================
+    // THEME MANAGEMENT
+    // ========================================================================
+    in-out property <string> theme-setting: "dark";
+
+    init => {
+        if (root.theme-setting == "dark") {
+            MaterialPalette.color-scheme = ColorScheme.dark;
+        } else {
+            MaterialPalette.color-scheme = ColorScheme.light;
+        }
+    }
+
+    // ========================================================================
+    // FOLDER QUEUE STATE
+    // ========================================================================
+    in-out property <[FolderItem]> folders: [];
+    in-out property <int> selected-folder-index: -1;
+
+    // ========================================================================
+    // SETTINGS STATE
+    // ========================================================================
+    in-out property <int> pulses: 720;
+    in-out property <float> gap-deg: 1.0;
+    in-out property <int> image-size: 1735;
+    in-out property <string> colormap: "viridis";
+    in-out property <int> jobs: 0;
+    in-out property <string> output-dir: "";
+
+    // ========================================================================
+    // PROCESSING STATE
+    // ========================================================================
+    in-out property <bool> is-processing: false;
+    in-out property <bool> is-complete: false;
+    in-out property <float> overall-progress: 0.0;
+    in-out property <int> folders-completed: 0;
+    in-out property <float> folder-progress: 0.0;
+    in-out property <int> files-completed: 0;
+    in-out property <int> files-total: 0;
+    in-out property <string> current-file: "";
+    in-out property <string> current-folder: "";
+    in-out property <string> eta-text: "--:--";
+    in-out property <float> files-per-second: 0.0;
+    in-out property <string> status-text: "Ready";
+
+    // ========================================================================
+    // CALLBACKS
+    // ========================================================================
+    callback add-folder();
+    callback remove-folder(int);
+    callback move-folder-up(int);
+    callback move-folder-down(int);
+    callback clear-queue();
+    callback start-processing();
+    callback stop-processing();
+    callback settings-changed(int, float, int, string, int, string);
+    callback browse-output-dir();
+    callback show-help();
+    
+    // ========================================================================
+    // UI STATE
+    // ========================================================================
+    property <bool> help-visible: false;
+
+    // ========================================================================
+    // MAIN LAYOUT
+    // ========================================================================
+    VerticalLayout {
+        // ====================================================================
+        // TOP BAR
+        // ====================================================================
+        TopBar {
+            file-add-folder => {
+                root.add-folder();
+            }
+            file-clear-queue => {
+                root.clear-queue();
+            }
+            view-theme-dark => {
+                root.theme-setting = "dark";
+                MaterialPalette.color-scheme = ColorScheme.dark;
+            }
+            view-theme-light => {
+                root.theme-setting = "light";
+                MaterialPalette.color-scheme = ColorScheme.light;
+            }
+            show-help => {
+                root.help-visible = !root.help-visible;
+            }
+        }
+
+        // ====================================================================
+        // MAIN CONTENT
+        // ====================================================================
+        HorizontalLayout {
+            vertical-stretch: 1;
+
+            // ================================================================
+            // LEFT SIDEBAR (permanent)
+            // ================================================================
+            Rectangle {
+                width: 280px;
+                background: MaterialPalette.surface-container-low;
+
+                VerticalLayout {
+                    // Folder Queue with Start button
+                    FolderQueue {
+                        vertical-stretch: 1;
+                        folders: root.folders;
+                        selected-index: root.selected-folder-index;
+                        is-processing: root.is-processing;
+                        has-folders: root.folders.length > 0;
+
+                        add-folder => {
+                            root.add-folder();
+                        }
+                        remove-folder(idx) => {
+                            root.remove-folder(idx);
+                        }
+                        move-up(idx) => {
+                            root.move-folder-up(idx);
+                        }
+                        move-down(idx) => {
+                            root.move-folder-down(idx);
+                        }
+                        select-folder(idx) => {
+                            root.selected-folder-index = idx;
+                        }
+                        start-processing => {
+                            root.start-processing();
+                        }
+                        stop-processing => {
+                            root.stop-processing();
+                        }
+                    }
+
+                    // Divider
+                    Rectangle {
+                        height: 1px;
+                        background: MaterialPalette.outline-variant;
+                    }
+
+                    // Settings Panel (scrollable)
+                    SettingsPanel {
+                        vertical-stretch: 1;
+                        pulses <=> root.pulses;
+                        gap-deg <=> root.gap-deg;
+                        image-size <=> root.image-size;
+                        colormap <=> root.colormap;
+                        jobs <=> root.jobs;
+                        output-dir <=> root.output-dir;
+
+                        settings-changed => {
+                            root.settings-changed(
+                                root.pulses,
+                                root.gap-deg,
+                                root.image-size,
+                                root.colormap,
+                                root.jobs,
+                                root.output-dir);
+                        }
+                        browse-output-dir => {
+                            root.browse-output-dir();
+                        }
+                    }
+                }
+
+                // Right border
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    height: 100%;
+                    background: MaterialPalette.outline-variant;
+                }
+            }
+
+            // ================================================================
+            // MAIN AREA - PROGRESS
+            // ================================================================
+            Rectangle {
+                horizontal-stretch: 1;
+                background: MaterialPalette.surface-container-lowest;
+
+                ProgressPanel {
+                    overall-progress: root.overall-progress;
+                    folders-completed: root.folders-completed;
+                    folders-total: root.folders.length;
+                    folder-progress: root.folder-progress;
+                    files-completed: root.files-completed;
+                    files-total: root.files-total;
+                    current-file: root.current-file;
+                    current-folder: root.current-folder;
+                    eta-text: root.eta-text;
+                    files-per-second: root.files-per-second;
+                    is-processing: root.is-processing;
+                    is-complete: root.is-complete;
+                }
+            }
+        }
+
+        // ====================================================================
+        // BOTTOM BAR
+        // ====================================================================
+        BottomBar {
+            status-text: root.status-text;
+            folders-in-queue: root.folders.length;
+            is-processing: root.is-processing;
+            colormap: root.colormap;
+            image-size: root.image-size;
+        }
+    }
+
+    // ========================================================================
+    // HELP OVERLAY
+    // ========================================================================
+    if root.help-visible: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000aa;
+
+        help-dismiss := TouchArea {
+            clicked => {
+                root.help-visible = false;
+            }
+        }
+
+        Rectangle {
+            width: 400px;
+            height: 380px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: MaterialPalette.surface-container;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                MaterialText {
+                    text: "Settings Help";
+                    style: MaterialTypography.headline-small;
+                    color: MaterialPalette.on-surface;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: MaterialPalette.outline-variant;
+                }
+
+                VerticalLayout {
+                    spacing: 8px;
+
+                    MaterialText {
+                        text: "• Ang. Resolution — Number of radar pulses per 360° revolution.";
+                        style: MaterialTypography.body-small;
+                        color: MaterialPalette.on-surface;
+                        wrap: word-wrap;
+                    }
+
+                    MaterialText {
+                        text: "• Interp. Fill — Maximum angular gap (in degrees) to interpolate.";
+                        style: MaterialTypography.body-small;
+                        color: MaterialPalette.on-surface;
+                        wrap: word-wrap;
+                    }
+
+                    MaterialText {
+                        text: "• Output Dim. — Output image dimensions in pixels.";
+                        style: MaterialTypography.body-small;
+                        color: MaterialPalette.on-surface;
+                        wrap: word-wrap;
+                    }
+
+                    MaterialText {
+                        text: "• Colormap — Color scheme for radar intensity visualization.";
+                        style: MaterialTypography.body-small;
+                        color: MaterialPalette.on-surface;
+                        wrap: word-wrap;
+                    }
+
+                    MaterialText {
+                        text: "• Num. Workers — Parallel worker threads (0 = auto).";
+                        style: MaterialTypography.body-small;
+                        color: MaterialPalette.on-surface;
+                        wrap: word-wrap;
+                    }
+
+                    MaterialText {
+                        text: "• Output — Custom output directory for generated images.";
+                        style: MaterialTypography.body-small;
+                        color: MaterialPalette.on-surface;
+                        wrap: word-wrap;
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+
+                Rectangle {
+                    height: 36px;
+                    border-radius: 8px;
+                    background: MaterialPalette.primary;
+
+                    close-touch := TouchArea {
+                        clicked => {
+                            root.help-visible = false;
+                        }
+                        mouse-cursor: pointer;
+                    }
+
+                    MaterialText {
+                        text: "Close";
+                        style: MaterialTypography.label-large;
+                        color: MaterialPalette.on-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

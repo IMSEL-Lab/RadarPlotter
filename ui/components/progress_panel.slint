@@ -1,0 +1,245 @@
+// ============================================================================
+// PROGRESS PANEL COMPONENT - TASK FOCUSED
+// ============================================================================
+// Clean, simple progress display for batch processing
+
+import { MaterialPalette } from "../material/ui/styling/material_palette.slint";
+import {
+    MaterialTypography,
+} from "../material/ui/styling/material_typography.slint";
+import { MaterialText } from "../material/ui/components/material_text.slint";
+import { AppTheme } from "../app_theme.slint";
+
+// ============================================================================
+// PROGRESS BAR - Simple left-to-right fill
+// ============================================================================
+component ProgressBar inherits Rectangle {
+    in property <float> progress: 0.0;
+    in property <string> label: "";
+    in property <color> bar-color: AppTheme.progress-fill;
+
+    height: 48px;
+
+    VerticalLayout {
+        spacing: 6px;
+
+        HorizontalLayout {
+            MaterialText {
+                text: root.label;
+                style: MaterialTypography.body-medium;
+                color: MaterialPalette.on-surface;
+                horizontal-stretch: 1;
+            }
+
+            MaterialText {
+                text: Math.round(root.progress * 100) + "%";
+                style: MaterialTypography.title-medium;
+                color: root.bar-color;
+            }
+        }
+
+        Rectangle {
+            height: 12px;
+            border-radius: 6px;
+            background: AppTheme.progress-background;
+
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * Math.max(0.0, Math.min(1.0, root.progress));
+                height: 100%;
+                border-radius: 6px;
+                background: root.bar-color;
+
+                animate width {
+                    duration: 150ms;
+                    easing: ease-out;
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// STAT ITEM - Simple labeled value
+// ============================================================================
+component StatItem inherits Rectangle {
+    in property <string> label;
+    in property <string> value;
+    in property <color> value-color: MaterialPalette.on-surface;
+
+    height: 56px;
+    border-radius: 8px;
+    background: MaterialPalette.surface-container;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 4px;
+        alignment: center;
+
+        MaterialText {
+            text: root.label;
+            style: MaterialTypography.label-small;
+            color: MaterialPalette.on-surface-variant;
+            horizontal-alignment: center;
+        }
+
+        MaterialText {
+            text: root.value;
+            style: MaterialTypography.title-medium;
+            color: root.value-color;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// ============================================================================
+// PROGRESS PANEL - Main component
+// ============================================================================
+export component ProgressPanel {
+    // Overall progress
+    in property <float> overall-progress: 0.0;
+    in property <int> folders-completed: 0;
+    in property <int> folders-total: 0;
+
+    // Current folder progress
+    in property <float> folder-progress: 0.0;
+    in property <int> files-completed: 0;
+    in property <int> files-total: 0;
+    in property <string> current-file: "";
+    in property <string> current-folder: "";
+
+    // Stats
+    in property <string> eta-text: "--:--";
+    in property <float> files-per-second: 0.0;
+
+    // State
+    in property <bool> is-processing: false;
+    in property <bool> is-complete: false;
+
+    VerticalLayout {
+        spacing: 20px;
+        padding: 20px;
+
+        // ====================================================================
+        // STATUS HEADER
+        // ====================================================================
+        HorizontalLayout {
+            alignment: center;
+            MaterialText {
+                text: root.is-complete ? "✓ Processing Complete!" : root.is-processing ? "Processing..." : root.folders-total > 0 ? "Ready to Process" : "Add Folders to Begin";
+                style: MaterialTypography.headline-small;
+                color: root.is-complete ? AppTheme.success : root.is-processing ? AppTheme.primary-main : MaterialPalette.on-surface-variant;
+                horizontal-alignment: center;
+            }
+        }
+
+        // ====================================================================
+        // STATS ROW
+        // ====================================================================
+        HorizontalLayout {
+            spacing: 12px;
+
+            StatItem {
+                horizontal-stretch: 1;
+                label: "Folders";
+                value: root.folders-completed + " / " + root.folders-total;
+                value-color: AppTheme.primary-main;
+            }
+
+            StatItem {
+                horizontal-stretch: 1;
+                label: "Files";
+                value: root.files-completed + " / " + root.files-total;
+                value-color: AppTheme.accent-main;
+            }
+
+            StatItem {
+                horizontal-stretch: 1;
+                label: "ETA";
+                value: root.eta-text;
+                value-color: AppTheme.secondary-main;
+            }
+
+            StatItem {
+                horizontal-stretch: 1;
+                label: "Speed";
+                value: Math.round(root.files-per-second * 10) / 10 + " /sec";
+                value-color: AppTheme.success;
+            }
+        }
+
+        // ====================================================================
+        // PROGRESS BARS
+        // ====================================================================
+        VerticalLayout {
+            spacing: 16px;
+
+            ProgressBar {
+                progress: root.overall-progress;
+                label: "Overall Progress";
+                bar-color: root.is-complete ? AppTheme.success : AppTheme.primary-main;
+            }
+
+            if root.is-processing && root.current-folder != "": VerticalLayout {
+                spacing: 8px;
+
+                ProgressBar {
+                    progress: root.folder-progress;
+                    label: root.current-folder;
+                    bar-color: AppTheme.accent-main;
+                }
+
+                if root.current-file != "": MaterialText {
+                    text: "→ " + root.current-file;
+                    style: MaterialTypography.label-small;
+                    color: MaterialPalette.outline;
+                    overflow: elide;
+                }
+            }
+        }
+
+        // ====================================================================
+        // SPACER
+        // ====================================================================
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        // ====================================================================
+        // HELP TEXT (when not processing)
+        // ====================================================================
+        if !root.is-processing && !root.is-complete && root.folders-total == 0: VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+
+            MaterialText {
+                text: "1. Add folders using the + button or File menu";
+                style: MaterialTypography.body-medium;
+                color: MaterialPalette.outline;
+                horizontal-alignment: center;
+            }
+
+            MaterialText {
+                text: "2. Adjust settings in the sidebar";
+                style: MaterialTypography.body-medium;
+                color: MaterialPalette.outline;
+                horizontal-alignment: center;
+            }
+
+            MaterialText {
+                text: "3. Click Start to begin processing";
+                style: MaterialTypography.body-medium;
+                color: MaterialPalette.outline;
+                horizontal-alignment: center;
+            }
+        }
+
+        if !root.is-processing && !root.is-complete && root.folders-total > 0: MaterialText {
+            text: "Click Start to process " + root.folders-total + " folder" + (root.folders-total == 1 ? "" : "s");
+            style: MaterialTypography.body-medium;
+            color: MaterialPalette.outline;
+            horizontal-alignment: center;
+        }
+    }
+}

@@ -1,0 +1,226 @@
+// ============================================================================
+// TOP BAR COMPONENT - CSV TO PPI
+// ============================================================================
+// Simplified menu bar
+
+import { MaterialPalette } from "../material/ui/styling/material_palette.slint";
+import {
+    MaterialTypography,
+} from "../material/ui/styling/material_typography.slint";
+import { MaterialText } from "../material/ui/components/material_text.slint";
+import { Icon } from "../material/ui/components/icon.slint";
+import { Icons } from "../material/ui/icons/icons.slint";
+import { PopupMenu } from "../material/ui/components/menu.slint";
+
+// ============================================================================
+// MENU BUTTON COMPONENT
+// ============================================================================
+component MenuButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> is-open;
+    in property <color> bg-color: MaterialPalette.surface-container;
+    in property <color> bg-hover-color: MaterialPalette.surface-container-high;
+    in property <color> bg-active-color: MaterialPalette.primary-container;
+    in property <color> text-color: MaterialPalette.on-surface;
+    in property <color> text-active-color: MaterialPalette.on-primary-container;
+    callback clicked();
+    callback hovered();
+
+    width: 60px;
+    height: 32px;
+    border-radius: 4px;
+    background: root.is-open ? root.bg-active-color : (touch.has-hover ? root.bg-hover-color : root.bg-color);
+
+    MaterialText {
+        text: root.text;
+        style: MaterialTypography.label-large;
+        color: root.is-open ? root.text-active-color : root.text-color;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+        mouse-cursor: pointer;
+        moved => {
+            if (self.has-hover) {
+                root.hovered();
+            }
+        }
+    }
+}
+
+export component TopBar {
+    // ========================================================================
+    // CALLBACKS
+    // ========================================================================
+    callback file-add-folder();
+    callback file-clear-queue();
+    callback view-theme-dark();
+    callback view-theme-light();
+    callback show-help();
+
+    // ========================================================================
+    // MENU STATE
+    // ========================================================================
+    property <bool> file-menu-open: false;
+    property <bool> view-menu-open: false;
+    property <bool> any-menu-open: root.file-menu-open || root.view-menu-open;
+
+    min-height: 40px;
+
+    Rectangle {
+        background: MaterialPalette.surface;
+
+        // Bottom border
+        Rectangle {
+            y: parent.height - 1px;
+            height: 1px;
+            background: MaterialPalette.outline-variant;
+        }
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+
+            // ================================================================
+            // LEFT SECTION - MENUS
+            // ================================================================
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+
+                file-menu-button := MenuButton {
+                    text: "File";
+                    is-open: root.file-menu-open;
+                    bg-color: MaterialPalette.primary-container;
+                    bg-hover-color: MaterialPalette.primary-container;
+                    bg-active-color: MaterialPalette.primary;
+                    text-color: MaterialPalette.on-primary-container;
+                    text-active-color: MaterialPalette.on-primary;
+                    clicked => {
+                        root.view-menu-open = false;
+                        root.file-menu-open = true;
+                        view-menu.close();
+                        file-menu.show();
+                    }
+                    hovered => {
+                        if (root.any-menu-open) {
+                            root.view-menu-open = false;
+                            root.file-menu-open = true;
+                            view-menu.close();
+                            file-menu.show();
+                        }
+                    }
+                }
+
+                view-menu-button := MenuButton {
+                    text: "View";
+                    is-open: root.view-menu-open;
+                    bg-color: MaterialPalette.tertiary-container;
+                    bg-hover-color: MaterialPalette.tertiary-container;
+                    bg-active-color: MaterialPalette.tertiary;
+                    text-color: MaterialPalette.on-tertiary-container;
+                    text-active-color: MaterialPalette.on-tertiary;
+                    clicked => {
+                        root.file-menu-open = false;
+                        root.view-menu-open = true;
+                        file-menu.close();
+                        view-menu.show();
+                    }
+                    hovered => {
+                        if (root.any-menu-open) {
+                            root.file-menu-open = false;
+                            root.view-menu-open = true;
+                            file-menu.close();
+                            view-menu.show();
+                        }
+                    }
+                }
+            }
+
+            // ================================================================
+            // SPACER
+            // ================================================================
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            // ================================================================
+            // RIGHT SECTION - HELP
+            // ================================================================
+            Rectangle {
+                width: 32px;
+                height: 32px;
+                border-radius: 16px;
+                background: help-touch.has-hover ? MaterialPalette.surface-container-high : transparent;
+
+                Icon {
+                    source: Icons.help;
+                    width: 20px;
+                    height: 20px;
+                    colorize: MaterialPalette.on-surface-variant;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                help-touch := TouchArea {
+                    clicked => {
+                        root.show-help();
+                    }
+                    mouse-cursor: pointer;
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    // FILE MENU
+    // ========================================================================
+    file-menu := PopupMenu {
+        x: file-menu-button.absolute-position.x;
+        y: file-menu-button.absolute-position.y + file-menu-button.height;
+
+        items: [
+            { text: "Add Folder...", enabled: true },
+            { text: "Clear Queue", enabled: true },
+        ];
+
+        activated(index) => {
+            self.close();
+            root.file-menu-open = false;
+            if (index == 0) {
+                root.file-add-folder();
+            } else if (index == 1) {
+                root.file-clear-queue();
+            }
+        }
+    }
+
+    // ========================================================================
+    // VIEW MENU
+    // ========================================================================
+    view-menu := PopupMenu {
+        x: view-menu-button.absolute-position.x;
+        y: view-menu-button.absolute-position.y + view-menu-button.height;
+
+        items: [
+            { text: "Dark Theme", enabled: true },
+            { text: "Light Theme", enabled: true },
+        ];
+
+        activated(index) => {
+            self.close();
+            root.view-menu-open = false;
+            if (index == 0) {
+                root.view-theme-dark();
+            } else if (index == 1) {
+                root.view-theme-light();
+            }
+        }
+    }
+}
