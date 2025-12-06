@@ -1,12 +1,10 @@
-# CSV to PPI (Rust)
+# PPIRender
 
-> **A high-performance GUI application for batch converting Furuno CSV radar captures to transparent PPI (Plan Position Indicator) images.**
+> **A high-performance GUI application for batch converting radar CSV captures to transparent PPI (Plan Position Indicator) images.**
 
 Developed at the **[IMSEL Lab](https://github.com/IMSEL-Lab)** (Integrated Multiphysics and Systems Engineering Laboratory), Department of Mechanical Engineering, **University of South Carolina**.
 
 Built with [Slint](https://slint.dev/) for a modern, responsive interface and powered by Rust for blazing-fast parallel processing.
-
-![Example PPI Output](figures/example_viridis_output.png)
 
 ---
 
@@ -18,7 +16,7 @@ Built with [Slint](https://slint.dev/) for a modern, responsive interface and po
 - **Multiple Colormaps** — Viridis, Turbo, Magma, and Grayscale options
 - **Real-time Progress** — Live progress bars, ETA, and files-per-second statistics
 - **Persistent Settings** — Your preferences are saved between sessions
-- **Transparent Output** — High-quality transparent PNGs with north at top
+- **Transparent Output** — High-quality transparent PNGs
 
 ---
 
@@ -59,16 +57,16 @@ Built with [Slint](https://slint.dev/) for a modern, responsive interface and po
 
 ### macOS Installation
 
-Download and mount `CSV_to_PPI.dmg`, then drag **CSV to PPI.app** to your Applications folder.
+Download and mount `PPIRender.dmg`, then drag **PPIRender.app** to your Applications folder.
 
-Alternatively, double-click `CSV to PPI.app` directly from the project directory to run.
+Alternatively, double-click `PPIRender.app` directly from the project directory to run.
 
 ### Build from Source
 
 **Prerequisites**: Rust 1.70+
 
 ```bash
-cd CSV_to_PPI_rust
+cd ppi-renderer
 
 # Build release version (much faster for batch processing)
 cargo build --release
