@@ -141,8 +141,14 @@ pub fn process_folders(
                 custom_dir.join(&folder.name)
             }
             _ => {
-                // Default: create ppi_output subfolder in input folder
-                folder.path.join("ppi_output")
+                // Default: create sibling folder with _img_N suffix
+                let folder_name = folder.path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("output");
+                let output_folder_name = format!("{}_img_{}", folder_name, settings.pulses);
+                folder.path.parent()
+                    .map(|p| p.join(&output_folder_name))
+                    .unwrap_or_else(|| folder.path.join("ppi_output"))
             }
         };
         
