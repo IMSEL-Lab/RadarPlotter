@@ -1,5 +1,5 @@
 [package]
-name = "csv_to_ppi_gui"
+name = "radar_plotter"
 version = "0.1.0"
 edition = "2024"
 

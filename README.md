@@ -1,4 +1,4 @@
-# PPIRender
+# RadarPlotter
 
 > **A high-performance GUI application for batch converting radar CSV captures to transparent PPI (Plan Position Indicator) images.**
 
@@ -57,16 +57,16 @@ Built with [Slint](https://slint.dev/) for a modern, responsive interface and po
 
 ### macOS Installation
 
-Download and mount `PPIRender.dmg`, then drag **PPIRender.app** to your Applications folder.
+Download and mount `RadarPlotter.dmg`, then drag **RadarPlotter.app** to your Applications folder.
 
-Alternatively, double-click `PPIRender.app` directly from the project directory to run.
+Alternatively, double-click `RadarPlotter.app` directly from the project directory to run.
 
 ### Build from Source
 
 **Prerequisites**: Rust 1.70+
 
 ```bash
-cd ppi-renderer
+cd RadarPlotter
 
 # Build release version (much faster for batch processing)
 cargo build --release
@@ -132,7 +132,7 @@ Status,Scale,Range,Gain,Angle,EchoValues
 ## Architecture
 
 ```
-CSV_to_PPI_rust/
+RadarPlotter/
 ├── src/
 │   ├── main.rs        # GUI entry point, callbacks, and state management
 │   ├── processing.rs  # Core CSV to PPI rendering logic (parallel)
