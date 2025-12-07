@@ -10,8 +10,6 @@ pub struct Settings {
     pub image_size: i32,
     pub colormap: String,
     pub jobs: i32,
-    #[serde(default)]
-    pub output_dir: String,
 }
 
 impl Default for Settings {
@@ -22,7 +20,6 @@ impl Default for Settings {
             image_size: 1735,
             colormap: "viridis".to_string(),
             jobs: 0,
-            output_dir: String::new(),
         }
     }
 }

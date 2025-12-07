@@ -33,7 +33,6 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.set_image_size(settings.image_size);
         ui.set_colormap(settings.colormap.into());
         ui.set_jobs(settings.jobs);
-        ui.set_output_dir(settings.output_dir.into());
     }
 
     
@@ -124,16 +123,14 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
     
-    // Settings changed callback
     {
-        ui.on_settings_changed(move |pulses, gap_deg, image_size, colormap, jobs, output_dir| {
+        ui.on_settings_changed(move |pulses, gap_deg, image_size, colormap, jobs| {
             let settings = config::Settings {
                 pulses,
                 gap_deg: gap_deg as f64,
                 image_size,
                 colormap: colormap.to_string(),
                 jobs,
-                output_dir: output_dir.to_string(),
             };
             let _ = config::save_settings(&settings);
         });
@@ -160,18 +157,12 @@ fn main() -> Result<(), slint::PlatformError> {
             stop_flag.store(false, Ordering::Relaxed);
             
             // Get settings
-            let output_dir_str = ui.get_output_dir().to_string();
             let settings = processing::ProcessingSettings {
                 pulses: ui.get_pulses() as usize,
                 gap_deg: ui.get_gap_deg() as f64,
                 size: ui.get_image_size() as u32,
                 colormap: ui.get_colormap().to_string(),
                 jobs: ui.get_jobs() as usize,
-                output_dir: if output_dir_str.is_empty() { 
-                    None 
-                } else { 
-                    Some(std::path::PathBuf::from(output_dir_str)) 
-                },
             };
 
             
@@ -334,20 +325,6 @@ fn main() -> Result<(), slint::PlatformError> {
         let stop_flag = stop_flag.clone();
         ui.on_stop_processing(move || {
             stop_flag.store(true, Ordering::Relaxed);
-        });
-    }
-    
-    // Browse output directory callback
-    {
-        let ui_weak = ui.as_weak();
-        ui.on_browse_output_dir(move || {
-            let ui = ui_weak.unwrap();
-            if let Some(path) = rfd::FileDialog::new()
-                .set_title("Select output directory")
-                .pick_folder()
-            {
-                ui.set_output_dir(path.to_string_lossy().to_string().into());
-            }
         });
     }
     

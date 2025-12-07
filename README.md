@@ -90,7 +90,6 @@ This application is built with Slint, which supports Windows, Linux, and macOS. 
    - **Image Size**: Output PNG dimensions (default: 1735px)
    - **Colormap**: Choose from viridis, turbo, magma, or gray
    - **Jobs**: Number of parallel threads (0 = auto, 90% of cores)
-   - **Output Directory**: Custom output location (optional)
 3. **Process** — Click "Start Processing" to begin batch conversion
 4. **Monitor** — Watch real-time progress with ETA and throughput
 
@@ -125,8 +124,8 @@ Status,Scale,Range,Gain,Angle,EchoValues
 - **Filename**: `<timestamp>_<gain>_<range>.png` (timestamp from CSV filename)
 
 **Output Location**:
-- If custom output directory is set: `<output_dir>/<folder_name>/`
-- Otherwise: `<input_folder>/ppi_output/`
+- Output is automatically saved to a sibling folder with `_img_N` suffix
+- Example: Processing `/data/radar_capture/` with 720 pulses creates `/data/radar_capture_img_720/`
 
 ---
 
@@ -177,7 +176,6 @@ flowchart LR
 | Image Size | `--size` | 1735 | Output image dimensions (square) |
 | Colormap | `--cmap` | viridis | Color scheme: viridis, turbo, magma, gray |
 | Jobs | `-j, --jobs` | 0 | Thread count (0 = 90% of cores) |
-| Output | `-o, --output` | — | Custom output directory |
 
 ---
 

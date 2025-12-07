@@ -52,7 +52,6 @@ export component AppWindow inherits Window {
     in-out property <int> image-size: 1735;
     in-out property <string> colormap: "viridis";
     in-out property <int> jobs: 0;
-    in-out property <string> output-dir: "";
 
     // ========================================================================
     // PROCESSING STATE
@@ -80,8 +79,7 @@ export component AppWindow inherits Window {
     callback clear-queue();
     callback start-processing();
     callback stop-processing();
-    callback settings-changed(int, float, int, string, int, string);
-    callback browse-output-dir();
+    callback settings-changed(int, float, int, string, int);
     callback show-help();
     
     // ========================================================================
@@ -175,7 +173,6 @@ export component AppWindow inherits Window {
                         image-size <=> root.image-size;
                         colormap <=> root.colormap;
                         jobs <=> root.jobs;
-                        output-dir <=> root.output-dir;
 
                         settings-changed => {
                             root.settings-changed(
@@ -183,11 +180,7 @@ export component AppWindow inherits Window {
                                 root.gap-deg,
                                 root.image-size,
                                 root.colormap,
-                                root.jobs,
-                                root.output-dir);
-                        }
-                        browse-output-dir => {
-                            root.browse-output-dir();
+                                root.jobs);
                         }
                     }
                 }

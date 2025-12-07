@@ -308,79 +308,6 @@ component ColormapItem inherits Rectangle {
     }
 }
 
-// ============================================================================
-// OUTPUT DIRECTORY SELECTOR (compact)
-// ============================================================================
-component OutputDirRow inherits Rectangle {
-    in-out property <string> output-dir;
-    callback browse-clicked();
-
-    height: 44px;
-
-    VerticalLayout {
-        alignment: center;
-
-        HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 12px;
-            spacing: 8px;
-
-            MaterialText {
-                text: "Output";
-                style: MaterialTypography.body-small;
-                color: MaterialPalette.on-surface;
-                vertical-alignment: center;
-            }
-
-            Rectangle {
-                horizontal-stretch: 1;
-                height: 28px;
-                border-radius: 4px;
-                background: MaterialPalette.surface-container-lowest;
-                border-width: 1px;
-                border-color: MaterialPalette.outline-variant;
-                clip: true;
-
-                HorizontalLayout {
-                    padding-left: 6px;
-                    padding-right: 6px;
-
-                    MaterialText {
-                        text: root.output-dir == "" ? "(input folder)" : root.output-dir;
-                        style: MaterialTypography.label-small;
-                        color: root.output-dir == "" ? MaterialPalette.outline : MaterialPalette.on-surface;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        horizontal-stretch: 1;
-                    }
-                }
-            }
-
-            Rectangle {
-                width: 28px;
-                height: 28px;
-                border-radius: 4px;
-                background: browse-touch.has-hover ? MaterialPalette.primary-container : MaterialPalette.surface-container;
-
-                Icon {
-                    source: Icons.folder_open;
-                    colorize: MaterialPalette.on-surface-variant;
-                    width: 16px;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
-
-                browse-touch := TouchArea {
-                    clicked => {
-                        root.browse-clicked();
-                    }
-                    mouse-cursor: pointer;
-                }
-            }
-        }
-    }
-}
-
 
 // ============================================================================
 // SETTINGS PANEL
@@ -392,15 +319,12 @@ export component SettingsPanel {
     in-out property <int> image-size: 1735;
     in-out property <string> colormap: "viridis";
     in-out property <int> jobs: 0;
-    in-out property <string> output-dir: "";
 
     // Section visibility
     property <bool> render-expanded: true;
     property <bool> colormap-expanded: true;
-    property <bool> output-expanded: true;
 
     callback settings-changed();
-    callback browse-output-dir();
 
     Flickable {
         viewport-height: content.preferred-height;
@@ -408,21 +332,6 @@ export component SettingsPanel {
         content := VerticalLayout {
             spacing: 4px;
             padding-bottom: 8px;
-
-            // ================================================================
-            // OUTPUT SECTION
-            // ================================================================
-            SectionHeader {
-                title: "Output";
-                expanded <=> root.output-expanded;
-            }
-
-            if root.output-expanded: OutputDirRow {
-                output-dir <=> root.output-dir;
-                browse-clicked => {
-                    root.browse-output-dir();
-                }
-            }
 
             // ================================================================
             // COLORMAP SECTION

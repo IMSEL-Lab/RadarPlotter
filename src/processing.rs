@@ -24,7 +24,6 @@ pub struct ProcessingSettings {
     pub size: u32,
     pub colormap: String,
     pub jobs: usize,
-    pub output_dir: Option<PathBuf>,
 }
 
 
@@ -134,23 +133,14 @@ pub fn process_folders(
             continue;
         }
         
-        // Determine output directory
-        let output_dir = match &settings.output_dir {
-            Some(custom_dir) if !custom_dir.as_os_str().is_empty() => {
-                // Use custom output dir, create subfolder with input folder name
-                custom_dir.join(&folder.name)
-            }
-            _ => {
-                // Default: create sibling folder with _img_N suffix
-                let folder_name = folder.path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("output");
-                let output_folder_name = format!("{}_img_{}", folder_name, settings.pulses);
-                folder.path.parent()
-                    .map(|p| p.join(&output_folder_name))
-                    .unwrap_or_else(|| folder.path.join("ppi_output"))
-            }
-        };
+        // Create output directory as sibling with _img_N suffix
+        let folder_name = folder.path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("output");
+        let output_folder_name = format!("{}_img_{}", folder_name, settings.pulses);
+        let output_dir = folder.path.parent()
+            .map(|p| p.join(&output_folder_name))
+            .unwrap_or_else(|| folder.path.join("ppi_output"));
         
         if let Err(e) = fs::create_dir_all(&output_dir) {
             let _ = tx.send(ProgressUpdate::FolderError {
